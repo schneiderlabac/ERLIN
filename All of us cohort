@@ -1,0 +1,161 @@
+### ERLIN1 p.Ile291Val replication in AllofUs
+### Feb 6th, 2024 - David Zhang
+
+library(dplyr)
+
+# Read in genotypes for ERLIN1 p.Ile291Val from AoU whole-exome subset v7.1
+# - genotypes extracted using plink2.0
+genos <- read.delim("ERLIN1_p.Ile291Val_AoU_v7-1_exome_genotypes.raw", sep="\t", header = TRUE, check.names = FALSE) %>%
+    na.omit()
+
+# Obtain IDs of ref/het/hom carriers for variant
+ref_ids <- genos$IID[genos$`chr10:100152307:T:C_C` == 0]
+het_ids <- genos$IID[genos$`chr10:100152307:T:C_C` == 1]
+hom_ids <- genos$IID[genos$`chr10:100152307:T:C_C` == 2]
+
+# Read in covariates for multivariate models: PC1-10, age, sex, BMI
+# - use PCs computed and provided by AoU from WGS
+# - age, sex, BMI extracted using AoU cohort builder
+AoU_PCs <- read.table("AllofUs_v7_wgs_short_read_ancestry_preds.txt", sep="\t", header=T)
+age_sex <- read.table("AllofUs_v7_COV_age_sex.txt", sep="\t", header=T)
+bmis <- read.table("AllofUs_v7_BMIs.txt", header=T, sep="\t")
+all_covars <- merge(AoU_PCs, merge(age_sex, bmis, by="person_id"), by.x="research_id", by.y="person_id") %>%
+    select(research_id, AGE, SEX, value_as_number, PC1, PC2, PC3, PC4, PC5, PC6, PC7, PC8, PC9, PC10) %>%
+    rename(person_id = research_id, BMI = value_as_number)
+
+
+### Compare Age / BMI
+### - for BMI, switch out with BMI file and replace 'AGE' with 'value_as_number'
+input <- read.table("AllofUs_v7_COV_age_sex.txt", sep="\t", header=T)
+
+c <- nrow(input[input$person_id %in% ref_ids,])
+m <- mean(input$AGE[input$person_id %in% ref_ids])
+s <- sd(input$AGE[input$person_id %in% ref_ids])
+print(paste0(c,", ",m,", ",s))
+
+c <- nrow(input[input$person_id %in% het_ids,])
+m <- mean(input$AGE[input$person_id %in% het_ids])
+s <- sd(input$AGE[input$person_id %in% het_ids])
+print(paste0(c,", ",m,", ",s))
+
+c <- nrow(input[input$person_id %in% hom_ids,])
+m <- mean(input$AGE[input$person_id %in% hom_ids])
+s <- sd(input$AGE[input$person_id %in% hom_ids])
+print(paste0(c,", ",m,", ",s))
+
+# Perform unpaired t-test
+res <- t.test(input$AGE[input$person_id %in% ref_ids], input$AGE[input$person_id %in% het_ids])
+res$p.value
+res <- t.test(input$AGE[input$person_id %in% ref_ids], input$AGE[input$person_id %in% hom_ids])
+res$p.value
+
+
+### Compare Sex
+nrow(input[input$person_id %in% ref_ids,])
+sum(input$SEX[input$person_id %in% ref_ids] == 0) / nrow(input[input$person_id %in% ref_ids,])
+
+nrow(input[input$person_id %in% het_ids,])
+sum(input$SEX[input$person_id %in% het_ids] == 0) / nrow(input[input$person_id %in% het_ids,])
+
+nrow(input[input$person_id %in% hom_ids,])
+sum(input$SEX[input$person_id %in% hom_ids] == 0) / nrow(input[input$person_id %in% hom_ids,])
+
+# Perform chi-sq test
+data <- matrix(c(sum(input$SEX[input$person_id %in% ref_ids] == 0), 
+                 sum(input$SEX[input$person_id %in% ref_ids] == 1), 
+                 sum(input$SEX[input$person_id %in% het_ids] == 0), 
+                 sum(input$SEX[input$person_id %in% het_ids] == 1)), nrow = 2, byrow = TRUE)
+chisq.test(data, correc = FALSE)
+data <- matrix(c(sum(input$SEX[input$person_id %in% ref_ids] == 0), 
+                 sum(input$SEX[input$person_id %in% ref_ids] == 1), 
+                 sum(input$SEX[input$person_id %in% hom_ids] == 0), 
+                 sum(input$SEX[input$person_id %in% hom_ids] == 1)), nrow = 2, byrow = TRUE)
+chisq.test(data, correc = FALSE)
+
+
+### Liver Status & Lipid Metabolism & Other serum parameters
+### - switch out input file with relevant file
+### - all labs filtered out outliers more than 4SD from mean
+input <- read.table("AllofUs_v7_labs-<lab_name>_wout_outliers_long.txt", header=T, sep="\t") %>%
+    group_by(person_id) %>%
+    summarise(mean_value = mean(value_as_number))
+
+c <- nrow(input[input$person_id %in% ref_ids,])
+m <- mean(input$mean_value[input$person_id %in% ref_ids])
+s <- sd(input$mean_value[input$person_id %in% ref_ids])
+print(paste0(c,", ",m,", ",s))
+
+c <- nrow(input[input$person_id %in% het_ids,])
+m <- mean(input$mean_value[input$person_id %in% het_ids])
+s <- sd(input$mean_value[input$person_id %in% het_ids])
+print(paste0(c,", ",m,", ",s))
+
+c <- nrow(input[input$person_id %in% hom_ids,])
+m <- mean(input$mean_value[input$person_id %in% hom_ids])
+s <- sd(input$mean_value[input$person_id %in% hom_ids])
+print(paste0(c,", ",m,", ",s))
+
+# Perform multivariate regression
+t <- genos %>% select(IID, `chr10:100152307:T:C_C`) %>% filter(`chr10:100152307:T:C_C` %in% c(0,1))
+input_df <- merge(merge(t, all_covars, by.x="IID", by.y="person_id"), input, by.x="IID", by.y="person_id")
+nrow(input_df)
+res <- lm(mean_value ~ `chr10:100152307:T:C_C` + AGE + SEX + BMI + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data=input_df)
+coef(summary(res))
+
+t <- genos %>% select(IID, `chr10:100152307:T:C_C`) %>% filter(`chr10:100152307:T:C_C` %in% c(0,2))
+input_df <- merge(merge(t, all_covars, by.x="IID", by.y="person_id"), input, by.x="IID", by.y="person_id")
+nrow(input_df)
+res <- lm(mean_value ~ `chr10:100152307:T:C_C` + AGE + SEX + BMI + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data=input_df)
+coef(summary(res))
+
+
+### ICD codes
+### - extracted using AoU cohort builder
+### - person_ids used to define controls for those without an ICD code diagnosis
+icd_codes <- data.table::fread("AllofUs_v7_phenotype_icd.txt", sep="\t", header=T)
+icd_person_ids <- read.table("AllofUs_v7_phenotype_icd_person_ids.txt", sep="\t", header=T)
+
+# Subset specific ICD codes
+subcodes <- icd_codes %>%
+    select(person_id, source_concept_code, source_vocabulary) %>%
+    filter((grepl("K70", source_concept_code) |
+            grepl("K71", source_concept_code) |
+            grepl("K72", source_concept_code) |
+            grepl("K73", source_concept_code) |
+            grepl("K74", source_concept_code) |
+            grepl("K75", source_concept_code) |
+            grepl("K76", source_concept_code)
+           ) & source_vocabulary == "ICD10CM") %>%
+    select(person_id) %>%
+    distinct()
+
+input <- icd_person_ids
+input$case <- 0
+input$case[input$person_id %in% subcodes$person_id] <- 1
+
+sum(input$person_id[input$case == 1] %in% ref_ids)
+(sum(input$person_id[input$case == 1] %in% ref_ids) / length(ref_ids)) * 100
+(sum(input$person_id[input$case == 1] %in% ref_ids) / sum(input$person_id %in% ref_ids)) * 100
+
+sum(input$person_id[input$case == 1] %in% het_ids)
+(sum(input$person_id[input$case == 1] %in% het_ids) / length(het_ids)) * 100
+(sum(input$person_id[input$case == 1] %in% het_ids) / sum(input$person_id %in% het_ids)) * 100
+
+sum(input$person_id[input$case == 1] %in% hom_ids)
+(sum(input$person_id[input$case == 1] %in% hom_ids) / length(hom_ids)) * 100
+(sum(input$person_id[input$case == 1] %in% hom_ids) / sum(input$person_id %in% hom_ids)) * 100
+
+# Perform multivariate regression
+t <- genos %>% select(IID, `chr10:100152307:T:C_C`) %>% filter(`chr10:100152307:T:C_C` %in% c(0,1))
+input_df <- merge(merge(t, all_covars, by.x="IID", by.y="person_id"), input, by.x="IID", by.y="person_id")
+nrow(input_df[input_df$case==1,])
+res <- glm(case ~ `chr10:100152307:T:C_C` + AGE + SEX + BMI + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data=input_df, family="binomial")
+coef(summary(res))
+
+t <- genos %>% select(IID, `chr10:100152307:T:C_C`) %>% filter(`chr10:100152307:T:C_C` %in% c(0,2))
+input_df <- merge(merge(t, all_covars, by.x="IID", by.y="person_id"), input, by.x="IID", by.y="person_id")
+nrow(input_df[input_df$case==1,])
+res <- glm(case ~ `chr10:100152307:T:C_C` + AGE + SEX + BMI + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10, data=input_df, family="binomial")
+coef(summary(res))
+
+

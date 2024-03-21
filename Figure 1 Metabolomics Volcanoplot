@@ -1,0 +1,145 @@
+# Metabolite Analysis with TM6 and ERLIN1
+
+This repository contains R scripts for analyzing metabolite data in relation to TM6 and ERLIN1. It includes code for data preparation, analysis, and summary of findings through linear models and other statistical measures.
+
+## Description
+
+The project aims to investigate the association between 168 metabolites and two genetic markers: TM6 and ERLIN1. The analysis includes creating linear models to understand the influence of these markers on metabolite levels.
+
+## Getting Started
+
+### Dependencies
+
+- R (version 3.6.0 or later)
+- Required R packages:
+  - `stats`
+  - `base`
+  - `broom`
+  - `tidyr`
+  - `readr`
+  - `dplyr`
+  - `gtools`
+  - `data.table`
+  - `tableone`
+  - `WriteXLS`
+
+### Installing
+
+1. Install R from [CRAN](https://cran.r-project.org/).
+2. Install the required packages using R command:
+   ```R
+   install.packages(c("broom", "tidyr", "readr", "dplyr", "gtools", "data.table", "tableone", "WriteXLS"))
+
+
+# Load necessary libraries
+library(stats)      # For statistical functions
+library(base)       # For basic operations
+library(broom)      # To tidy up model outputs
+library(tidyr)      # For data tidying
+library(readr)      # For reading data
+library(dplyr)      # For data manipulation
+library(gtools)     # For programming tools
+library(data.table) # For data table operations
+library(tableone)   # For creating 'Table 1'
+library(WriteXLS)   # For writing Excel files
+
+# Merging datasets
+# `df` is  preloaded. Merging `df` with `TM6SF2andERLIN` dataset, which contains both variants by 'eid' column.
+df <- merge(df, TM6SF2andERLIN, by.x = "eid", by.y = "eid", all.x = TRUE)
+
+# Function to generate summary table for linear models
+# This function creates linear models for variables against TM6 and returns a tidy summary.
+summary_table <- function(data, predictor) {
+  num_vars <- ncol(data)
+  
+  # Initialize lists to store model summaries
+  models <- vector("list", length = num_vars)
+  first_tables <- vector("list", length = num_vars)
+  
+  for (i in 4:num_vars) {  # Assuming first 3 columns are non-metabolites (e.g., id, age, BMI)
+    formula <- as.formula(paste(colnames(data)[i], "~", predictor))
+    models[[i]] <- lm(formula, data = data)
+    first_tables[[i]] <- broom::tidy(models[[i]])
+  }
+  
+  # Combine summaries into a single table
+  final_table <- do.call("rbind", first_tables)
+  return(final_table)
+}
+
+# Analysis for TM6
+final_table_TM6 <- summary_table(df, "TM6")
+final_table_TM6$logP <- -(log10(final_table_TM6$p.value))
+
+# Clean the final table by removing unnecessary columns
+final_table_TM6 <- select(final_table_TM6, -c(term, estimate, std.error, statistic))
+
+# Generate new table based on TM6 status
+newtable_TM6 <- aggregate(df[, 4:171], list(df$TM6), mean, na.rm = TRUE)
+newtable_TM6 <- rbind(newtable_TM6, log2(newtable_TM6[2, -1] / newtable_TM6[1, -1]))
+
+# Prepare the final combined table
+all_TM6 <- cbind(t(newtable_TM6), final_table_TM6)
+
+# Write the final table to an Excel file
+WriteXLS::WriteXLS("all_TM6", ExcelFileName = "TM6.xlsx")
+
+
+
+
+# Load necessary libraries
+library(stats)      # For statistical functions
+library(base)       # For basic operations
+library(broom)      # To tidy up model outputs
+library(tidyr)      # For data tidying
+library(readr)      # For reading data
+library(dplyr)      # For data manipulation
+library(gtools)     # For programming tools
+library(data.table) # For data table operations
+library(tableone)   # For creating 'Table 1'
+library(WriteXLS)   # For writing Excel files
+
+# Merging datasets
+# `df` is assumed to be preloaded. Merging `df` with `TM6SF2andERLIN` dataset by 'eid' column.
+df <- merge(df, TM6SF2andERLIN, by.x = "eid", by.y = "eid", all.x = TRUE)
+
+# Function to generate summary table for linear models
+# This function creates linear models for variables against ERLIN1 and returns a tidy summary.
+summary_table <- function(data, predictor) {
+  num_vars <- ncol(data)
+  
+  # Initialize lists to store model summaries
+  models <- vector("list", length = num_vars)
+  first_tables <- vector("list", length = num_vars)
+  
+  for (i in 4:num_vars) {  # Assuming first 3 columns are non-metabolites (e.g., id, age, BMI)
+    formula <- as.formula(paste(colnames(data)[i], "~", predictor))
+    models[[i]] <- lm(formula, data = data)
+    first_tables[[i]] <- broom::tidy(models[[i]])
+  }
+  
+  # Combine summaries into a single table
+  final_table <- do.call("rbind", first_tables)
+  return(final_table)
+}
+
+# Analysis for ERLIN1
+final_table_ERLIN1 <- summary_table(df, "ERLIN1")
+final_table_ERLIN1$logP <- -(log10(final_table_ERLIN1$p.value))
+
+# Clean the final table by removing unnecessary columns
+final_table_ERLIN1 <- select(final_table_ERLIN1, -c(term, estimate, std.error, statistic))
+
+# Generate new table based on ERLIN1 status
+newtable_ERLIN1 <- aggregate(df[, 4:171], list(df$ERLIN1), mean, na.rm = TRUE)
+newtable_ERLIN1 <- rbind(newtable_ERLIN1, log2(newtable_ERLIN1[2, -1] / newtable_ERLIN1[1, -1]))
+
+# Prepare the final combined table
+all_ERLIN1 <- cbind(t(newtable_ERLIN1), final_table_ERLIN1)
+
+# Write the final table to an Excel file
+WriteXLS::WriteXLS("all_ERLIN1", ExcelFileName = "ERLIN1.xlsx")
+
+
+#The volcano plots were then manually generated in prism
+
